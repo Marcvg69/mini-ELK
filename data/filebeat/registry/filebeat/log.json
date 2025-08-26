@@ -1,4 +1,0 @@
-{"op":"set","id":1}
-{"k":"filebeat::logs::native::21-44","v":{"FileStateOS":{"inode":21,"device":44},"identifier_name":"native","id":"native::21-44","prev_id":"","offset":0,"timestamp":[22452046,1756233195],"ttl":-1,"source":"/logs/error.log","type":"log"}}
-{"op":"set","id":2}
-{"k":"filebeat::logs::native::9-44","v":{"type":"log","prev_id":"","timestamp":[22934088,1756233195],"ttl":-1,"FileStateOS":{"inode":9,"device":44},"identifier_name":"native","id":"native::9-44","source":"/logs/access.log","offset":0}}
