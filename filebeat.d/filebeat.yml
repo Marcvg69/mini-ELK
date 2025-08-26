@@ -1,24 +1,18 @@
-# ============================== Filebeat inputs ===============================
-# (No plain inputs needed for nginx module demo. You can leave empty or remove.)
 filebeat.inputs: []
+filebeat.modules:
+  - module: nginx
+    access:
+      enabled: true
+      var.paths: ["/logs/access.log"]
+    error:
+      enabled: true
+      var.paths: ["/logs/error.log"]
 
-# ============================== Filebeat modules ==============================
-# This is the critical bit — it makes Filebeat load ./modules.d/*.yml dynamically
-filebeat.config.modules:
-  path: ${path.config}/modules.d/*.yml
-  reload.enabled: true
-
-# ======================= Elasticsearch output ================================
 output.elasticsearch:
   hosts: ["http://elasticsearch:9200"]
-  username: "elastic"
-  password: "${ELASTIC_PASSWORD}"
+  username: "${ELASTICSEARCH_USERNAME:elastic}"
+  password: "${ELASTICSEARCH_PASSWORD}"
 
-# ============================== Setup (templates/ILM) ========================
-# Keep defaults; Filebeat v8 writes to the filebeat data stream by default (.ds-filebeat-8.x.x-*)
+setup.template.enabled: false
 setup.ilm.enabled: auto
-
-# ============================== Logging ======================================
-logging.level: info
 logging.to_files: false
-logging.to_stderr: true
