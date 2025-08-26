@@ -1,0 +1,31 @@
+{
+  "description": "Pipeline for processing nginx access logs",
+  "processors": [
+    {
+      "grok": {
+        "field": "message",
+        "patterns": [
+          "%{IPORHOST:client.ip} - %{DATA:user.name} \\[%{HTTPDATE:nginx.access.time}\\] \"%{WORD:http.request.method} %{DATA:http.request.referrer} HTTP/%{NUMBER:http.version}\" %{NUMBER:http.response.status_code:long} %{NUMBER:http.response.body.bytes:long} \"%{DATA:http.request.referrer}\" \"%{DATA:user_agent.original}\" %{NUMBER:event.duration_sec:float}"
+        ]
+      }
+    },
+    {
+      "date": {
+        "field": "nginx.access.time",
+        "formats": ["dd/MMM/yyyy:H:m:s Z"],
+        "target_field": "@timestamp"
+      }
+    },
+    {
+      "script": {
+        "lang": "painless",
+        "source": "ctx.event.duration = Math.round(ctx.event.duration_sec * 1000000000);"
+      }
+    },
+    {
+      "remove": {
+        "field": "nginx.access.time"
+      }
+    }
+  ]
+}

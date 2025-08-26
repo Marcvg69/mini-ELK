@@ -1,0 +1,41 @@
+# ============================ Filebeat inputs =============================
+filebeat.inputs:
+  - type: log
+    id: nginx-logs
+    enabled: true
+    paths:
+      - /logs/*.log
+    # Tag events so you know they came from this input
+    tags: ["nginx", "access"]
+
+# ======================= Elasticsearch output =============================
+output.elasticsearch:
+  # Use the service name inside the docker network
+  hosts: ["http://elasticsearch:9200"]
+
+  # Authentication - superuser elastic
+  username: "elastic"
+  password: "changeme"   
+
+  #username: "elastic"
+  #password: "${ELASTIC_PASSWORD}"
+
+  # Force events through our custom pipeline
+  pipeline: "nginx_access_pipeline"
+
+# ============================== Logging ===================================
+logging:
+  level: info
+  to_files: false
+  to_syslog: false
+
+# ========================== Filebeat modules ==============================
+# Disabled, we’re only using our custom input
+filebeat.config.modules:
+  enabled: false
+
+# ======================= Internal options ================================
+# Disable strict permissions check (needed for mounted configs in Docker)
+setup.ilm.enabled: false
+xpack.monitoring.enabled: false
+strict.perms: false
