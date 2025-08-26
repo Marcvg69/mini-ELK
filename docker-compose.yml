@@ -1,26 +1,29 @@
-# Docker Compose v2 schema
-# Runs Elasticsearch, Kibana, Filebeat for mini-ELK demo
+# docker-compose.yml
+# Mini-ELK: Elasticsearch + Kibana + Filebeat (with nginx module)
+# Requires a .env file alongside this compose with at least:
+#   ELASTIC_VERSION=8.15.0
+#   ES_HTTP=9200
+#   KIBANA_HTTP=5601
+#   ELASTIC_PASSWORD=<password for elastic>
+#   ELASTICSEARCH_USERNAME=kibana_system
+#   ELASTICSEARCH_PASSWORD=<password you set for kibana_system>
 
 services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_VERSION}
     container_name: es-mini
     environment:
-      # Single-node dev mode
       - discovery.type=single-node
-      # Enable security (required in 8.x)
       - xpack.security.enabled=true
-      # Set the built-in "elastic" superuser password on first boot
       - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
-      # Keep HTTP without TLS for local demo
       - xpack.security.http.ssl.enabled=false
     ports:
       - "${ES_HTTP}:9200"
     healthcheck:
-      test: ["CMD", "curl", "-s", "http://localhost:9200"]
-      interval: 10s
-      timeout: 5s
-      retries: 60
+      test: ["CMD", "curl", "-fsS", "http://localhost:9200"]
+      interval: 5s
+      timeout: 3s
+      retries: 120
 
   kibana:
     image: docker.elastic.co/kibana/kibana:${ELASTIC_VERSION}
@@ -28,33 +31,48 @@ services:
     depends_on:
       - elasticsearch
     environment:
-      # Point Kibana to ES inside the compose network
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-
-      # 🔑 Auth using kibana_system user + password
       - ELASTICSEARCH_USERNAME=${ELASTICSEARCH_USERNAME}
       - ELASTICSEARCH_PASSWORD=${ELASTICSEARCH_PASSWORD}
-
-      # Basic server settings
       - xpack.security.enabled=true
       - server.publicBaseUrl=http://localhost:${KIBANA_HTTP}
       - server.host=0.0.0.0
     ports:
       - "${KIBANA_HTTP}:5601"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:5601/api/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 120
 
   filebeat:
-    image: docker.elastic.co/beats/filebeat:${ELASTIC_VERSION}
+    image: docker.elastic.co/beats/filebeat:8.15.0
     container_name: filebeat-mini
     user: root
+    restart: unless-stopped
     depends_on:
       - elasticsearch
-      - kibana
-    command: ["--strict.perms=false", "-e"]
     environment:
-      # Filebeat -> ES inside docker network
-      - ELASTICSEARCH_HOST=elasticsearch:9200
-      - ELASTICSEARCH_USERNAME=elastic
-      - ELASTICSEARCH_PASSWORD=${ELASTIC_PASSWORD}
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+      ELASTICSEARCH_USERNAME: ${ELASTICSEARCH_USERNAME:-elastic}
+      ELASTICSEARCH_PASSWORD: ${ELASTICSEARCH_PASSWORD}
+    # Do NOT override modules/inputs here; we read them from filebeat.yml + modules.d
+    command: ["filebeat", "-e"]
     volumes:
-      - ./filebeat.d/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      # Filebeat config (MUST be a file, not a directory)
+      - ./filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      # Filebeat modules directory (ensure ./modules.d/nginx.yml exists)
+      - ./modules.d:/usr/share/filebeat/modules.d:ro
+      # Host logs mounted into the container at /logs
       - ./logs:/logs:ro
+      # Filebeat registry/state
+      - ./data/filebeat:/usr/share/filebeat/data
+    healthcheck:
+      test: ["CMD", "filebeat", "test", "config", "-e"]
+      interval: 20s
+      timeout: 5s
+      retries: 12
+
+networks:
+  default:
+    name: mini-elk_default

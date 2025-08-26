@@ -1,0 +1,20 @@
+# Load any modules in modules.d/
+filebeat.config.modules:
+  path: ${path.config}/modules.d/*.yml
+  reload.enabled: false
+
+# Keep registry inside the container's data dir (bind-mounted by compose)
+filebeat.registry.path: /usr/share/filebeat/data/registry
+
+processors:
+  - add_host_metadata: ~
+  - add_cloud_metadata: ~
+  - add_locale: ~
+
+# Output to Elasticsearch (envs supplied by docker-compose)
+output.elasticsearch:
+  hosts: ["${ELASTICSEARCH_HOSTS:http://elasticsearch:9200}"]
+  username: "${ELASTICSEARCH_USERNAME:elastic}"
+  password: "${ELASTICSEARCH_PASSWORD}"
+
+logging.level: info

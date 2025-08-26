@@ -1,0 +1,11 @@
+- module: nginx
+
+  access:
+    enabled: true
+    # We bind-mount ./logs -> /logs in docker-compose
+    var.paths: ["/logs/access.log"]
+
+  error:
+    enabled: true
+    var.paths: ["/logs/error.log"]
+
