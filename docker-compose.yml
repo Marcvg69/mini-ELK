@@ -1,62 +1,38 @@
 services:
   elasticsearch:
-    container_name: es-mini
     image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+    container_name: es-mini
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=true
       - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
-      - node.name=es-mini
-      - bootstrap.memory_lock=true
-      - ES_JAVA_OPTS=-Xms1g -Xmx1g
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-    ports:
-      - "${ES_HTTP:-9200}:9200"
+    ports: ["9200:9200"]
     networks: [elk]
 
   kibana:
-    container_name: kibana-mini
     image: docker.elastic.co/kibana/kibana:8.15.0
-    depends_on: [elasticsearch]
-    environment:
-      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-      - ELASTICSEARCH_USERNAME=kibana_system
-      - ELASTICSEARCH_PASSWORD=${KIBANA_SYSTEM_PASSWORD}
-      # demo-friendly keys so sessions survive restarts
-      - xpack.security.encryptionKey=change-me-32-bytes-change-me-32-bytes
-      - xpack.encryptedSavedObjects.encryptionKey=change-me-32-bytes-change-me-32-bytes
-      - xpack.reporting.encryptionKey=change-me-32-bytes-change-me-32-bytes
-    ports:
-      - "${KIBANA_HTTP:-5601}:5601"
-    networks: [elk]
-
-  filebeat:
-    container_name: filebeat-mini
-    image: docker.elastic.co/beats/filebeat:8.15.0
-    user: root
-    depends_on: [elasticsearch]
-    # IMPORTANT: mount individual files, not the whole /usr/share/filebeat directory
-    volumes:
-      # Your Filebeat config file
-      - ./filebeat.d/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
-      # The nginx module config
-      - ./filebeat.d/modules.d/nginx.yml:/usr/share/filebeat/modules.d/nginx.yml:ro
-      # A persistent data dir for the Filebeat registry
-      - ./data/filebeat:/usr/share/filebeat/data
-      # Your demo log folder
-      - ./logs:/logs
+    container_name: kibana-mini
     environment:
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
       - ELASTICSEARCH_USERNAME=elastic
       - ELASTICSEARCH_PASSWORD=${ELASTIC_PASSWORD}
-    command: [
-      "-e", "-strict.perms=false"
-    ]
+    ports: ["5601:5601"]
+    depends_on: [elasticsearch]
+    networks: [elk]
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.15.0
+    container_name: logstash-mini
+    environment:
+      - LS_JAVA_OPTS=-Xms256m -Xmx256m
+      - XPACK_MONITORING_ENABLED=false
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+    volumes:
+      - ./logs:/logs:ro
+      - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
+    depends_on: [elasticsearch]
     networks: [elk]
 
 networks:
   elk:
-    name: mini-elk_elk
+    driver: bridge
