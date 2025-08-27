@@ -1,37 +1,50 @@
-import random, time, datetime, pathlib
+#!/usr/bin/env python3
+# generate_logs.py
+# ------------------------------------------------------------
+# Generate demo Nginx-like access lines (and some errors)
+# into ./logs/access.log and ./logs/error.log for Logstash.
+# ------------------------------------------------------------
+import time
+import random
+from datetime import datetime, timezone
 
-LOG = pathlib.Path("logs/access.log")
-LOG.parent.mkdir(parents=True, exist_ok=True)
+ACCESS_PATH = "logs/access.log"
+ERROR_PATH  = "logs/error.log"
 
-ips = ["192.168.0.12", "10.0.0.5", "66.249.66.1", "172.16.1.10", "203.0.113.9"]
-methods = ["GET", "POST"]
-urls = ["/", "/login", "/products", "/products/42", "/search?q=elk", "/api/v1/orders"]
-agents = [
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
-    "curl/8.1.0",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-]
+METHODS = ["GET", "POST", "PUT", "DELETE"]
+PATHS   = ["/", "/hello", "/health", "/api/v1/items", "/login", "/missing.html"]
+UAS     = ["curl/8.1.0", "Mozilla/5.0", "k6/0.48.0"]
 
-def line():
-    ip = random.choice(ips)
-    ident = "-"
-    user = "-"
-    now = datetime.datetime.utcnow().strftime("%d/%b/%Y:%H:%M:%S +0000")
-    method = random.choice(methods)
-    url = random.choice(urls)
-    status = random.choices([200, 201, 301, 400, 401, 403, 404, 500], weights=[70,5,5,5,3,3,6,3])[0]
-    size = random.randint(200, 5000)
-    ref = "-"
-    ua = random.choice(agents)
-    rt = random.random() * 0.8 + (0.7 if status >= 500 else 0.0)  # slower if 5xx
-    return f'{ip} - {ident} {user} [{now}] "{method} {url} HTTP/1.1" {status} {size} "{ref}" "{ua}" {rt:.3f}\n'
+def httpdate():
+    # e.g. 27/Aug/2025:06:46:39 +0000
+    return datetime.now(timezone.utc).strftime("%d/%b/%Y:%H:%M:%S +0000")
 
-print("Writing synthetic access logs to logs/access.log (Ctrl+C to stop)…")
-with LOG.open("a", encoding="utf-8") as f:
-    try:
-        while True:
-            f.write(line())
+def write_access(n=20, sleep_s=0.2):
+    with open(ACCESS_PATH, "a", encoding="utf-8") as f:
+        for _ in range(n):
+            ip = "127.0.0.1"
+            method = random.choice(METHODS)
+            path = random.choice(PATHS)
+            status = random.choice([200, 201, 204, 302, 400, 401, 403, 404, 500])
+            bytes_ = random.randint(50, 2048)
+            ua = random.choice(UAS)
+            dur = round(random.uniform(0.001, 0.250), 3)
+            line = f'{ip} - - [{httpdate()}] "{method} {path} HTTP/1.1" {status} {bytes_} "-" "{ua}" {dur}\n'
+            f.write(line)
             f.flush()
-            time.sleep(random.uniform(0.05, 0.3))
-    except KeyboardInterrupt:
-        print("Stopped.")
+            time.sleep(sleep_s)
+
+def write_error():
+    # simple error format; includes client/server/request/host that our grok can pick up
+    msg = ('[error] 123#123: *1 open() "/var/www/html/missing.html" failed (2: No such file or directory), '
+           'client: 127.0.0.1, server: localhost, request: "GET /missing.html HTTP/1.1", host: "localhost"\n')
+    with open(ERROR_PATH, "a", encoding="utf-8") as f:
+        f.write(msg)
+        f.flush()
+
+if __name__ == "__main__":
+    print("Generating access log lines...")
+    write_access(n=30, sleep_s=0.05)
+    print("Writing one error line...")
+    write_error()
+    print("Done.")
