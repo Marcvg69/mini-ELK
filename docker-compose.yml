@@ -6,33 +6,67 @@ services:
       - discovery.type=single-node
       - xpack.security.enabled=true
       - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
-    ports: ["9200:9200"]
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -u elastic:${ELASTIC_PASSWORD} http://localhost:9200 >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
     networks: [elk]
-
-  kibana:
-    image: docker.elastic.co/kibana/kibana:8.15.0
-    container_name: kibana-mini
-    environment:
-      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-      - ELASTICSEARCH_USERNAME=elastic
-      - ELASTICSEARCH_PASSWORD=${ELASTIC_PASSWORD}
-    ports: ["5601:5601"]
-    depends_on: [elasticsearch]
-    networks: [elk]
+    restart: unless-stopped
 
   logstash:
     image: docker.elastic.co/logstash/logstash:8.15.0
     container_name: logstash-mini
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
     environment:
-      - LS_JAVA_OPTS=-Xms256m -Xmx256m
-      - XPACK_MONITORING_ENABLED=false
+      # Let Logstash talk to secured ES as 'elastic'
       - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+      # Optional: reduce memory footprint
+      - LS_JAVA_OPTS=-Xms256m -Xmx256m
+      # Keep built-in monitoring off for simplicity
+      - xpack.monitoring.enabled=false
+    # We read host files via the 'file' input in logstash.conf
     volumes:
-      - ./logs:/logs:ro
       - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
-    depends_on: [elasticsearch]
+      - ./logs:/logs
+    # No Beats input here, so no port exposure needed
     networks: [elk]
+    restart: unless-stopped
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.15.0
+    container_name: kibana-mini
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - ELASTICSEARCH_USERNAME=kibana_system
+      - ELASTICSEARCH_PASSWORD=${KIBANA_SYSTEM_PASSWORD}
+      - SERVER_PUBLICBASEURL=http://localhost:5601
+    ports:
+      - "5601:5601"
+    volumes:
+      - kibanadata:/usr/share/kibana/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:5601/api/status | grep -q 'overall'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    networks: [elk]
+    restart: unless-stopped
 
 networks:
   elk:
     driver: bridge
+
+volumes:
+  esdata:
+  kibanadata:
