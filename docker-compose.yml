@@ -1,64 +1,96 @@
 services:
+  # ============================== Elasticsearch ==============================
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
-    container_name: es-mini
+    container_name: es-mini                 # nice, predictable name for CLI/logs
     environment:
+      # Run as a single-node cluster (no master election); perfect for demos/dev.
       - discovery.type=single-node
+
+      # Turn on security (users, passwords, TLS options). Required for 8.x by default.
       - xpack.security.enabled=true
+
+      # Sets the 'elastic' superuser password INSIDE ES. Make sure it matches your .env.
       - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+
+      # JVM heap for ES (both Xms and Xmx). 512m is lightweight; raise for bigger datasets.
       - ES_JAVA_OPTS=-Xms512m -Xmx512m
     ports:
+      # Expose ES HTTP API on the host. Inside the network it’s still 9200.
       - "9200:9200"
     volumes:
+      # Persist indexes and cluster state between restarts in a named volume.
       - esdata:/usr/share/elasticsearch/data
-    # EXEC-form healthcheck (no shell) so '*' etc. never get globbed
+
+    # Healthcheck so other services (depends_on) can wait until ES is actually up.
+    # Using the JSON-array (exec) form avoids shell quirks and variable globbing.
     healthcheck:
       test: ["CMD", "curl", "-s", "-u", "elastic:${ELASTIC_PASSWORD}", "http://localhost:9200"]
       interval: 10s
       timeout: 5s
       retries: 30
-    networks: [elk]
-    restart: unless-stopped
 
+    networks: [elk]          # Put services on an isolated bridge network
+    restart: unless-stopped  # Auto-restart unless you explicitly stop the container
+
+  # ================================= Logstash =================================
   logstash:
     image: docker.elastic.co/logstash/logstash:8.15.0
     container_name: logstash-mini
     depends_on:
+      # Don’t start Logstash until ES healthcheck passes (prevents 401/connection errors)
       elasticsearch:
         condition: service_healthy
     environment:
-      # Logstash will use 'elastic' + ELASTIC_PASSWORD to talk to ES (configure in pipeline output)
+      # Pipeline output uses 'elastic' + ELASTIC_PASSWORD to write into ES
       - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+
+      # Small heap is fine here; increase if you add heavy filters or lots of events.
       - LS_JAVA_OPTS=-Xms256m -Xmx256m
+
+      # We’re not sending Logstash internals to ES/x-pack monitoring in this minimal stack.
       - xpack.monitoring.enabled=false
     volumes:
+      # Mount your pipeline config (read-only) into the expected Logstash path.
       - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
+
+      # Mount host logs into the container at /logs so the file input can tail them.
       - ./logs:/logs
     networks: [elk]
     restart: unless-stopped
 
+  # ================================== Kibana ==================================
   kibana:
     image: docker.elastic.co/kibana/kibana:8.15.0
     container_name: kibana-mini
     environment:
+      # Kibana talks to ES via the internal service name/port on the same network
       ELASTICSEARCH_HOSTS: "http://elasticsearch:9200"
+
+      # Use the dedicated kibana_system service account (not 'elastic') to connect.
       ELASTICSEARCH_USERNAME: "kibana_system"
+
+      # IMPORTANT: Must match the kibana_system user password inside ES. Keep in .env.
       ELASTICSEARCH_PASSWORD: "${KIBANA_SYSTEM_PASSWORD}"
     ports:
+      # Expose Kibana UI on the host. Open http://localhost:5601 in your browser.
       - "5601:5601"
     depends_on:
+      # Wait for ES to be healthy before Kibana starts its server
       elasticsearch:
         condition: service_healthy
     volumes:
+      # Persist saved objects (index patterns/data views, dashboards, etc.)
       - kibanadata:/usr/share/kibana/data
     networks:
       - elk
     restart: unless-stopped
 
+# ============================== Networking/Storage ==============================
 networks:
   elk:
-    driver: bridge
+    driver: bridge  # Isolate the ELK services on a project-specific bridge
 
 volumes:
-  esdata:
-  kibanadata:
+  esdata:      # Named volume so ES data survives 'docker compose up/down'
+  kibanadata:  # Named volume so Kibana saved objects persist
